@@ -110,7 +110,7 @@ footer{background:#000;color:#aaa;text-align:center;padding:28px 16px;font-size:
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mem={};const L=(k,d)=>{try{const v=localStorage.getItem('uju_'+k);return v?JSON.parse(v):(mem[k]??d)}catch(e){return mem[k]??d}};
 const raw=(k,v)=>{mem[k]=v;try{localStorage.setItem('uju_'+k,JSON.stringify(v))}catch(e){}};const S=(k,v)=>{raw(k,v);if(CLOUD){if(T[k])sync(k,v);else if(k=='bank')pushBank(v)}};
-const CFG={url:'https://uewdapgnhebtdldmmvqd.supabase.co',key:'sb_publishable_Yzso_YybQcwm5BXCphiTcQ_hROUmndS'},CLOUD=!CFG.url.includes('YOUR_'),T={prods:'products',orders:'orders',sellers:'sellers'},TB={products:'prods',orders:'orders',sellers:'sellers',profiles:'users',settings:'bank'},WANT=['products','orders','sellers','profiles','settings'];
+const CFG={url:'https://uewdapgnhebtdldmmvqd.supabase.co',key:'sb_publishable_Yzso_YybQcwm5BXCphiTcQ_hROUmndS'},USE_CLOUD=false,CLOUD=USE_CLOUD&&!CFG.url.includes('YOUR_'),T={prods:'products',orders:'orders',sellers:'sellers'},TB={products:'prods',orders:'orders',sellers:'sellers',profiles:'users',settings:'bank'},WANT=['products','orders','sellers','profiles','settings'];
 let SES=L('ses',null),q=Promise.resolve(),snap={};
 async function api(p,o={},retry=1){const r=await fetch(CFG.url+p,{...o,headers:{apikey:CFG.key,...(SES?{Authorization:'Bearer '+SES.at}:{}),'Content-Type':'application/json',...(o.headers||{})}});
  if(r.status==401&&retry&&SES&&await refresh())return api(p,o,0);
@@ -194,7 +194,7 @@ function ai(q){q=q.toLowerCase();const P=prods();
 let aiG=0;$('#aiB').onclick=()=>{open('#pAI');if(!aiG){aiG=1;say('Hi, I’m VELTEX AI, your UJU STORE helper. Ask me about products, payment, orders or selling.')}};
 const aiSend=()=>{const i=$('#aiQ'),v=i.value.trim();if(!v)return;say(v,1);i.value='';setTimeout(()=>say(ai(v)),300)};$('#aiS').onclick=aiSend;$('#aiQ').onkeydown=e=>{if(e.key=='Enter')aiSend()};
 
-function sets(){open('#pSet');$('#set').innerHTML=`<div class="card"><h4>Install app</h4><p>${isApp()?'UJU STORE is installed on this device.':'Add UJU STORE to your home screen for a full-screen app experience.'}</p>${isApp()?'':'<button class="btn r" id="inst">Install app</button>'}<p class="free" id="ih"></p></div><div class="card"><h4>Account</h4>${E(user.name)}<br>${E(user.email)}<br>${E(user.phone||'')}</div>`;const b=$('#inst');if(b)b.onclick=()=>installApp($('#ih'))}
+function sets(){open('#pSet');$('#set').innerHTML=`<div class="card"><h4>Install app</h4><p>${isApp()?'UJU STORE is installed on this device.':'Add UJU STORE to your home screen for a full-screen app experience.'}</p>${isApp()?'':'<button class="btn r" id="inst">Install app</button>'}<p class="free" id="ih"></p></div><div class="card"><h4>Account</h4>${E(user.name)}<br>${E(user.phone||'')}</div>`;const b=$('#inst');if(b)b.onclick=()=>installApp($('#ih'))}
 
 let dip=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e});
 const isApp=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone||!!window.Capacitor;
@@ -214,7 +214,7 @@ if(CLOUD){
    if(!pr.length)await api('/rest/v1/profiles',{method:'POST',body:JSON.stringify({id:SES.id,owner:SES.id,data:{name:md.name||n||e,phone:md.phone||ph,email:isE?e:''}})});
    const ad=await api('/rest/v1/rpc/is_admin',{method:'POST',body:'{}'});
    user={name:md.name||n||(ad===true?'Admin':e),phone:md.phone||ph,email:e,admin:ad===true};S('me',user);$('#auth').style.display='none';enter()}
-  catch(x){const m=x.message||'';er.textContent=/rate|seconds|limit/i.test(m)?'Too many attempts. Please try again in a few minutes.':/invalid login/i.test(m)?'Wrong email or password.':/already/i.test(m)?'This email is already registered. Please log in.':m}finally{$('#aGo').disabled=false}};
+  catch(x){const m=x.message||'';er.textContent=/rate|seconds|limit/i.test(m)?'Too many attempts. Please try again in a few minutes. ('+m+')':/invalid login/i.test(m)?'Wrong email or password.':/already/i.test(m)?'This email is already registered. Please log in.':m}finally{$('#aGo').disabled=false}};
  const _e=enter;enter=async function(){if(!SES||!(await refresh())){S('me',null);S('ses',null);location.reload();return}await pull();_e();setInterval(()=>pull().then(render),30000)};
 }
 
@@ -250,4 +250,12 @@ function impO(txt,ch){const r=csvP(txt);if(r.length<2)return 0;const h=r[0].map(
  r.slice(1).forEach((w,k)=>{const id=g(w,c.id)||String(k+1),key=ch.slice(0,3).toUpperCase()+id.replace(/\W/g,'');if(m.has(key)){const e=m.get(key),it=g(w,c.it);if(it)e.items.push(it);return}const fs=g(w,c.fs);m.set(key,{id:key,email:'import',name:g(w,c.nm)||'Customer',phone:g(w,c.ph),addr:g(w,c.ad),total:parseFloat(g(w,c.tt).replace(/[^0-9.]/g,''))||0,items:g(w,c.it)?[g(w,c.it)]:['Item'],st:fs&&!/paid|complete/i.test(fs)?'Awaiting payment':'Paid',ch,d:Date.now(),t:g(w,c.dt)||new Date().toLocaleString()})});
  const a=L('orders',[]);let n=0;m.forEach(v=>{if(!ex.has(v.id)){a.push(v);n++}});if(n)S('orders',a);return n}
 function expP(){const p=L('prods',[]),e=s=>'"'+String(s??'').replace(/"/g,'""')+'"',rows=['Handle,Title,Vendor,Type,Published,Option1 Name,Option1 Value,Variant Price'].concat(p.map(x=>[e(String(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')),e(x.name),e(x.brand||x.seller),e(x.cat),'TRUE',e('Size'),e(x.size||'OS'),x.price].join(','))),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));a.download='uju-products.csv';a.click()}
+
+function localAuth(){const id0=$('#aE').value.trim(),dg=(d=>d.startsWith('0')?'234'+d.slice(1):d)(id0.replace(/\D/g,'')),n=$('#aN').value.trim(),p=$('#aP').value,er=$('#aErr'),us=users();er.textContent='';
+ if(dg.length<10||p.length<6)return er.textContent='Enter your phone number and a password of 6+ characters.';
+ const e=dg+'@ujustore.com',isA=dg=='2349159133469';
+ if(mode=='s'){if(!n)return er.textContent='Enter your name.';if(us.find(u=>u.email==e))return er.textContent='This number is already registered. Please log in.';us.push({name:n,phone:dg,email:e,p});S('users',us);user={name:n,phone:dg,email:e,admin:isA}}
+ else{const u=us.find(u=>u.email==e&&u.p==p);if(!u)return er.textContent='Wrong phone number or password.';user={name:u.name,phone:dg,email:e,admin:isA}}
+ S('me',user);$('#auth').style.display='none';enter()}
+if(!CLOUD)$('#aGo').onclick=localAuth;
 </script></body></html>
