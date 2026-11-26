@@ -1,4 +1,49 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><!--
+UJU STORE SETUP FILES (all inside this one file)
+
+=== 1. VELTEX MARKETPLACE SQL (Supabase > SQL Editor > run once) ===
+-- UJU STORE x VELTEX marketplace. Run once in Supabase > SQL Editor.
+create table if not exists listings(id text primary key, token text not null, data jsonb not null, created_at timestamptz not null default now());
+alter table listings enable row level security;
+revoke all on listings from anon, authenticated;
+grant select (id, data, created_at) on listings to anon, authenticated;
+grant insert on listings to anon, authenticated;
+create policy l_sel on listings for select using (true);
+create policy l_ins on listings for insert with check (octet_length(data::text) < 250000);
+
+create or replace function update_listing(p_id text, p_token text, p_data jsonb) returns boolean
+language plpgsql security definer set search_path=public as $$
+begin update listings set data=p_data where id=p_id and token=p_token; return found; end $$;
+create or replace function delete_listing(p_id text, p_token text) returns boolean
+language plpgsql security definer set search_path=public as $$
+begin delete from listings where id=p_id and token=p_token; return found; end $$;
+grant execute on function update_listing(text,text,jsonb), delete_listing(text,text) to anon, authenticated;
+
+=== 2. PRODUCT VIDEO SQL (Supabase > SQL Editor > run once) ===
+-- UJU STORE product videos. Run once in Supabase > SQL Editor.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('uju-videos', 'uju-videos', true, 31457280, array['video/mp4','video/webm','video/quicktime','video/3gpp'])
+on conflict (id) do update set public = true, file_size_limit = 31457280;
+create policy "uju videos upload" on storage.objects for insert to anon, authenticated with check (bucket_id = 'uju-videos');
+create policy "uju videos read" on storage.objects for select to anon, authenticated using (bucket_id = 'uju-videos');
+
+=== 3. VELTEX APP FEED CODE (paste into the VELTEX app) ===
+// UJU STORE products for the VELTEX marketplace.
+// 1) Add this file (or paste it) into the VELTEX app.  2) Call ujuProducts() and render the list in your marketplace.
+const UJU = { url: 'https://uewdapgnhebtdldmmvqd.supabase.co', key: 'sb_publishable_Yzso_YybQcwm5BXCphiTcQ_hROUmndS' };
+async function ujuProducts() {
+  const r = await fetch(UJU.url + '/rest/v1/listings?select=id,data,created_at&order=created_at.desc&limit=200', { headers: { apikey: UJU.key } });
+  if (!r.ok) return [];
+  return (await r.json()).map(x => ({
+    id: 'uju-' + x.id, title: x.data.name, brand: x.data.brand, category: x.data.cat,
+    price: x.data.price, oldPrice: x.data.old || 0, image: x.data.img, emoji: x.data.ico,
+    seller: x.data.seller, source: 'UJU STORE', description: x.data.desc, video: x.data.video, soldOut: !!x.data.oos,
+    link: x.data.url + '#p=' + encodeURIComponent(x.data.id)   // opens the product inside UJU STORE
+  }));
+}
+
+In the app you can also copy each of these from Menu > Sales channels > VELTEX Marketplace.
+--><!--
 SUPABASE SETUP (run once in Supabase > SQL Editor):
 -- UJU STORE backend. Run once in Supabase: SQL Editor -> New query -> paste -> Run.
 create table if not exists admins(email text primary key);
@@ -258,8 +303,8 @@ function chanL(){open('#pShop');const rows=[['VELTEX Marketplace','Connected','Y
  SB().innerHTML=`<div class="sh-t"><b>Sales channels</b><span></span></div><div class="sh-c"><h4>Get customers</h4><small>Share your store link where your customers are.</small><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="sb" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Shop at UJU STORE: '+url)}">WhatsApp</a><a class="sb" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}">Facebook</a><button class="sb o" id="cpl" style="margin:0;width:auto">Copy link</button></div></div>`+rows.map(r=>`<div class="sh-r" data-c="${r[0]}"><div class="sp"><b>${r[0]}</b>${bd(r[1],r[1]=='Connected'?'g':'')}</div><small>${r[2]}</small></div>`).join('');
  $('#cpl').onclick=()=>{try{navigator.clipboard.writeText(url);toast('Link copied')}catch(e){toast(url)}};SB().querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>chanD(b.dataset.c))}
 function chanD(n){const imp=['Shopify','Etsy','Printify'].includes(n),man=['WhatsApp','Instagram','Facebook'].includes(n);
- SB().innerHTML=`<div class="sh-t"><button class="sb o" id="bk">‹ Channels</button><b>${n}</b><span></span></div><div class="sh-c">${imp?`<h4>Import orders</h4><small>Export your orders as a CSV from ${n}, then upload the file here. Amounts are imported as they appear in the file.</small><input id="cf" type="file" accept=".csv" style="margin-top:10px"><h4 style="margin-top:12px">Export products</h4><small>Download your UJU STORE products as a Shopify-format CSV.</small><button class="sb" id="ex">Export products CSV</button>`:man?`<h4>Orders from ${n}</h4><small>When a customer orders in a chat, record it here so it shows in Orders.</small><button class="sb" id="mo">Create order</button>`:n=='VELTEX Marketplace'?'<h4>Live product feed</h4><small>Every product you upload is published to the VELTEX app marketplace automatically. Use the button to publish products you uploaded earlier.</small><button class="sb" id="vxp">Publish all my products</button>':'<small>This channel is already part of your store.</small>'}</div>${imp?`<div class="sh-c"><small>Automatic live sync with ${n} needs a secure server connection and your ${n} API access. It is not set up yet, so use CSV import for now.</small></div>`:''}`;
- $('#bk').onclick=chanL;const vp=$('#vxp');if(vp)vp.onclick=async()=>{vp.disabled=true;const a=L('prods',[]);let k=0;for(const p of a){if(await vxPush(p))k++}toast(k+' product'+(k==1?'':'s')+' published');vp.disabled=false};const mo=$('#mo');if(mo)mo.onclick=()=>newO(n);const ex=$('#ex');if(ex)ex.onclick=expP;
+ SB().innerHTML=`<div class="sh-t"><button class="sb o" id="bk">‹ Channels</button><b>${n}</b><span></span></div><div class="sh-c">${imp?`<h4>Import orders</h4><small>Export your orders as a CSV from ${n}, then upload the file here. Amounts are imported as they appear in the file.</small><input id="cf" type="file" accept=".csv" style="margin-top:10px"><h4 style="margin-top:12px">Export products</h4><small>Download your UJU STORE products as a Shopify-format CSV.</small><button class="sb" id="ex">Export products CSV</button>`:man?`<h4>Orders from ${n}</h4><small>When a customer orders in a chat, record it here so it shows in Orders.</small><button class="sb" id="mo">Create order</button>`:n=='VELTEX Marketplace'?'<h4>Live product feed</h4><small>Every product you upload is published to the VELTEX app marketplace automatically. Use the button to publish products you uploaded earlier.</small><button class="sb" id="vxp">Publish all my products</button><button class="sb o" id="vxt" style="margin-top:8px">Check connection</button><p class="m" id="vxr"></p><h4 style="margin-top:14px">Setup files</h4><small>Copy these into Supabase (SQL Editor) or into the VELTEX app. Everything is inside this one file.</small><button class="sb o" data-cp="vx">Copy marketplace SQL</button><button class="sb o" data-cp="vid">Copy video SQL</button><button class="sb o" data-cp="feed">Copy VELTEX feed code</button>':'<small>This channel is already part of your store.</small>'}</div>${imp?`<div class="sh-c"><small>Automatic live sync with ${n} needs a secure server connection and your ${n} API access. It is not set up yet, so use CSV import for now.</small></div>`:''}`;
+ $('#bk').onclick=chanL;const vp=$('#vxp');if(vp)vp.onclick=async()=>{vp.disabled=true;const a=L('prods',[]);let k=0;for(const p of a){if(await vxPush(p))k++}toast(k+' product'+(k==1?'':'s')+' published');vp.disabled=false};const vt=$('#vxt');if(vt)vt.onclick=vxTest;document.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>cpy(CPY[b.dataset.cp]));const mo=$('#mo');if(mo)mo.onclick=()=>newO(n);const ex=$('#ex');if(ex)ex.onclick=expP;
  const cf=$('#cf');if(cf)cf.onchange=()=>{const f=cf.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const c=impO(String(r.result),n);toast(c+' order'+(c==1?'':'s')+' imported');chanL()};r.readAsText(f)}}
 function csvP(t){const r=[];let row=[],c='',qt=false;for(let i=0;i<t.length;i++){const h=t[i];if(qt){if(h=='"'){if(t[i+1]=='"'){c+='"';i++}else qt=false}else c+=h}else if(h=='"')qt=true;else if(h==','){row.push(c);c=''}else if(h=='\n'||h=='\r'){if(h=='\r'&&t[i+1]=='\n')i++;row.push(c);c='';if(row.some(x=>x!==''))r.push(row);row=[]}else c+=h}row.push(c);if(row.some(x=>x!==''))r.push(row);return r}
 function impO(txt,ch){const r=csvP(txt);if(r.length<2)return 0;const h=r[0].map(x=>x.trim().toLowerCase()),ix=(...k)=>{for(const w of k){const i=h.indexOf(w);if(i>-1)return i}for(const w of k){const i=h.findIndex(x=>x.includes(w));if(i>-1)return i}return -1};
@@ -335,11 +380,11 @@ function chartV(){open('#pShop');const DAY=864e5,ds=t=>{const d=new Date(t);d.se
 
 const VX=()=>CFG.url&&!CFG.url.includes('YOUR_'),vxH={apikey:CFG.key,'Content-Type':'application/json'},
 vxPub=p=>({id:p.id,name:p.name,brand:p.brand||'',cat:p.cat,price:p.price,old:p.old||0,size:p.size||'OS',seller:p.seller,img:p.img||'',ico:p.ico||'',desc:p.desc||'',video:p.video||'',oos:!!p.oos,url:location.href.split('#')[0].split('?')[0],src:'UJU STORE',ts:Date.now()});
-async function vxPush(p){if(!VX()||!p)return false;try{if(p.tk){const r=await fetch(CFG.url+'/rest/v1/rpc/update_listing',{method:'POST',headers:vxH,body:JSON.stringify({p_id:p.id,p_token:p.tk,p_data:vxPub(p)})});if(!r.ok)throw 0}
- else{const tk=crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now(),r=await fetch(CFG.url+'/rest/v1/listings',{method:'POST',headers:vxH,body:JSON.stringify({id:p.id,token:tk,data:vxPub(p)})});if(!r.ok)throw 0;const all=L('prods',[]),q=all.find(x=>x.id==p.id);if(q){q.tk=tk;S('prods',all)}}return true}catch(e){toast('Could not publish to the VELTEX marketplace');return false}}
+async function vxPush(p,q){if(!VX()||!p)return false;try{if(p.tk){const r=await fetch(CFG.url+'/rest/v1/rpc/update_listing',{method:'POST',headers:vxH,body:JSON.stringify({p_id:p.id,p_token:p.tk,p_data:vxPub(p)})});if(!r.ok)throw 0}
+ else{const tk=crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now(),r=await fetch(CFG.url+'/rest/v1/listings',{method:'POST',headers:vxH,body:JSON.stringify({id:p.id,token:tk,data:vxPub(p)})});if(!r.ok)throw 0;const all=L('prods',[]),q=all.find(x=>x.id==p.id);if(q){q.tk=tk;S('prods',all)}}return true}catch(e){if(!q)toast('Could not publish. Open Menu → Sales channels → VELTEX Marketplace → Check connection.');return false}}
 function vxDel(p){if(VX()&&p.tk)fetch(CFG.url+'/rest/v1/rpc/delete_listing',{method:'POST',headers:vxH,body:JSON.stringify({p_id:p.id,p_token:p.tk})}).catch(()=>{})}
 async function vxPull(){if(!VX())return;try{const r=await fetch(CFG.url+'/rest/v1/listings?select=id,data&order=created_at.desc&limit=200',{headers:{apikey:CFG.key}});if(!r.ok)return;raw('remote',(await r.json()).map(x=>x.data));render()}catch(e){}}
-const _enter2=enter;enter=function(){_enter2();vxPull().then(()=>{const m=location.hash.match(/^#p=(.+)$/);if(m)detail(decodeURIComponent(m[1]))});setInterval(vxPull,60000)};
+const _enter2=enter;enter=function(){_enter2();L('prods',[]).filter(p=>!p.tk).forEach(p=>vxPush(p,1));vxPull().then(()=>{const m=location.hash.match(/^#p=(.+)$/);if(m)detail(decodeURIComponent(m[1]))});setInterval(vxPull,60000)};
 
 function vidHTML(u){u=String(u||'');if(!/^https:\/\//i.test(u))return '';const y=u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/);
  if(y)return `<iframe class="dvid" src="https://www.youtube.com/embed/${y[1]}" allowfullscreen loading="lazy"></iframe>`;
@@ -360,4 +405,13 @@ function editP(id){const p=L('prods',[]).find(x=>x.id==id);if(!p)return;rmv=fals
 $('#sell').addEventListener('click',e=>{const d=e.target.closest('[data-ed]'),r=e.target.closest('[data-rm]');if(d)editP(d.dataset.ed);if(r&&confirm('Delete this product?')){const a=L('prods',[]),p=a.find(x=>x.id==r.dataset.rm);if(p)vxDel(p);S('prods',a.filter(x=>x.id!=r.dataset.rm));toast('Product deleted');render();sell2()}});
 
 $('#sell').addEventListener('click',e=>{const b=e.target.closest('[data-oo]');if(!b)return;const a=L('prods',[]),p=a.find(x=>x.id==b.dataset.oo);if(!p)return;p.oos=!p.oos;S('prods',a);vxPush(p);toast(p.oos?'Marked as sold out':'Back in stock');render();sell2()});
+
+async function vxTest(){const el=$('#vxr');el.textContent='Checking…';if(!VX()){el.textContent='Online setup is missing: the Supabase address and key are not in this file.';return}
+ try{const r=await fetch(CFG.url+'/rest/v1/listings?select=id&limit=1',{headers:{apikey:CFG.key,Prefer:'count=exact',Range:'0-0','Range-Unit':'items'}}),t=await r.text();
+  if(r.ok){const n=(r.headers.get('content-range')||'').split('/')[1]||'?',mine=L('prods',[]);el.textContent='Connected. '+n+' product(s) are live in the marketplace. '+mine.filter(p=>p.tk).length+' of your '+mine.length+' product(s) are published.'}
+  else{let m='';try{m=JSON.parse(t).message||''}catch(e){}el.textContent=/relation|schema cache|does not exist/i.test(m)?'The marketplace table is missing. Run veltex-marketplace.sql in Supabase, then try again.':'Connection problem: '+(m||r.status)}}
+ catch(e){el.textContent='No internet connection, or the Supabase address is wrong.'}}
+
+const CPY={"vx": "-- UJU STORE x VELTEX marketplace. Run once in Supabase > SQL Editor.\ncreate table if not exists listings(id text primary key, token text not null, data jsonb not null, created_at timestamptz not null default now());\nalter table listings enable row level security;\nrevoke all on listings from anon, authenticated;\ngrant select (id, data, created_at) on listings to anon, authenticated;\ngrant insert on listings to anon, authenticated;\ncreate policy l_sel on listings for select using (true);\ncreate policy l_ins on listings for insert with check (octet_length(data::text) < 250000);\n\ncreate or replace function update_listing(p_id text, p_token text, p_data jsonb) returns boolean\nlanguage plpgsql security definer set search_path=public as $$\nbegin update listings set data=p_data where id=p_id and token=p_token; return found; end $$;\ncreate or replace function delete_listing(p_id text, p_token text) returns boolean\nlanguage plpgsql security definer set search_path=public as $$\nbegin delete from listings where id=p_id and token=p_token; return found; end $$;\ngrant execute on function update_listing(text,text,jsonb), delete_listing(text,text) to anon, authenticated;\n", "vid": "-- UJU STORE product videos. Run once in Supabase > SQL Editor.\ninsert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)\nvalues ('uju-videos', 'uju-videos', true, 31457280, array['video/mp4','video/webm','video/quicktime','video/3gpp'])\non conflict (id) do update set public = true, file_size_limit = 31457280;\ncreate policy \"uju videos upload\" on storage.objects for insert to anon, authenticated with check (bucket_id = 'uju-videos');\ncreate policy \"uju videos read\" on storage.objects for select to anon, authenticated using (bucket_id = 'uju-videos');\n", "feed": "// UJU STORE products for the VELTEX marketplace.\n// 1) Add this file (or paste it) into the VELTEX app.  2) Call ujuProducts() and render the list in your marketplace.\nconst UJU = { url: 'https://uewdapgnhebtdldmmvqd.supabase.co', key: 'sb_publishable_Yzso_YybQcwm5BXCphiTcQ_hROUmndS' };\nasync function ujuProducts() {\n  const r = await fetch(UJU.url + '/rest/v1/listings?select=id,data,created_at&order=created_at.desc&limit=200', { headers: { apikey: UJU.key } });\n  if (!r.ok) return [];\n  return (await r.json()).map(x => ({\n    id: 'uju-' + x.id, title: x.data.name, brand: x.data.brand, category: x.data.cat,\n    price: x.data.price, oldPrice: x.data.old || 0, image: x.data.img, emoji: x.data.ico,\n    seller: x.data.seller, source: 'UJU STORE', description: x.data.desc, video: x.data.video, soldOut: !!x.data.oos,\n    link: x.data.url + '#p=' + encodeURIComponent(x.data.id)   // opens the product inside UJU STORE\n  }));\n}\n"};
+function cpy(t){const fb=()=>{const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');toast('Copied')}catch(e){toast('Copy failed')}a.remove()};try{navigator.clipboard.writeText(t).then(()=>toast('Copied')).catch(fb)}catch(e){fb()}}
 </script></body></html>
